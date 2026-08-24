@@ -1,0 +1,36 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: poe-nexus-postgres
+    environment:
+      POSTGRES_DB: poe_nexus
+      POSTGRES_USER: poe_nexus
+      POSTGRES_PASSWORD: poe_nexus_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - poe_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U poe_nexus -d poe_nexus"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: poe-nexus-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - poe_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  poe_pg_data:
+  poe_redis_data:

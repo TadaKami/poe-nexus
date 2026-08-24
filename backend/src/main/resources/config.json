@@ -1,0 +1,21 @@
+{
+    "server": {
+        "host":"127.0.0.0.1",
+        "port": 8080
+    },
+    "db":{
+        "host": "localhost",
+        "port": 5432,
+        "database": "poe_nexus",
+        "username": "nexus_adm",
+        "password": "${DB_PASSWORD}"
+    },
+    "redis": {
+        "host": "localhost",
+        "port": 6379
+    },
+    "jwt":{
+        "secret": "${JWT_SECRET}",
+        "accessTtlMinutes": 15
+    }
+}

@@ -1,0 +1,25 @@
+# --- JVM / Gradle ---
+backend/.gradle/
+backend/build/
+backend/out/
+*.class
+*.log
+
+# --- Node / Frontend ---
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# --- IDE ---
+.idea/
+*.iml
+.vscode/
+.DS_Store
+
+# --- Env / secrets ---
+.env
+.env.*
+!.env.example
+
+# --- Local config overrides ---
+backend/src/main/resources/config.local.json

@@ -14,7 +14,7 @@ object Db{
         PgPool.pool(
             vertx,
             PgConnectOptions.fromUri(cfg.dbUrl)
-                .setSslMode(SslMode.REQUIRE)
+                .setSslMode(SslMode.valueOf(cfg.sslMode))
                 .setCachePreparedStatements(false),
             PoolOptions().setMaxSize(cfg.poolSize)
         )

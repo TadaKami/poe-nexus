@@ -32,7 +32,7 @@ export default function RegisterPage(){
         }
     }
     return (
-        <main className="min-h-screen bg-poe-gold flex item-center justify-center p-4">
+        <main className="min-h-screen bg-poe-bg flex items-center justify-center p-4">
             <form onSubmit={onSubmit} className="w-full max-w-sm bg-poe-panel border border-poe-gold/30 p-6 space-y-4">
                 <h1 className="text-2xl font-serif text-center text-poe-gold">Регистрация</h1>
                 <input

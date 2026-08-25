@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { useAuthStore } from "@/services/authStore";
+import { useAuthStore } from "@/stores/authStore";
 
 const inputCls = 'w-full bg-black/40 border border-poe-gold/20 px-3 py-2 text-sm text-amber-100 focus:border-poe-gold outline-none';
 
@@ -46,7 +46,12 @@ export default function LoginPage(){
                     className={inputCls}
                 />
                 {error && <p className="text-sm text-red-400">{error}</p>}
-                <button className="w-full bg-poe-gold/90 hover:bg-poe-gold text-black font-semibold py-2 disabled:opacity-50" disabled={loading}>{loading}</button>
+                +                <button
+                    className="w-full bg-poe-gold/90 hover:bg-poe-gold text-black font-semibold py-2 disabled:opacity-50"
+                    disabled={loading}
+                >
+                    {loading ? 'Вход…' : 'Войти'}
+               </button>
                 <Link to="/register" className="block text-center text-sm text-poe-gold/70 hover:text-poe-gold">Нет аккаунта? Регистрация</Link>
             </form>
         </main>

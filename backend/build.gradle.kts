@@ -23,9 +23,9 @@ dependencies {
     // Kotlin coroutines bridge
     implementation("io.vertx:vertx-lang-kotlin-coroutines")
 
-    // Auth (JWT) — понадобится в модуле авторизации
-    implementation("io.vertx:vertx-auth-jwt")
-
+    // Хеширование паролей: Argon2id
+    implementation("de.mkammerer:argon2-jvm:2.12")    
+    
     // Данные: PostgreSQL + Redis
     implementation("io.vertx:vertx-pg-client")
     implementation("io.vertx:vertx-redis-client")

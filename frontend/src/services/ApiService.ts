@@ -17,9 +17,9 @@ http.interceptors.request.use((config) =>{
 });
 
 // Response: 401 -> один refresh и retry оригинального запроса
-http.interceptors.request.use((res), async(error) => {
+http.interceptors.response.use((res) => res, async (error) => {
     const original = error.config;
-    const isAuth = original?.url?.startWith('/auth/');
+    const isAuth = original?.url?.startsWith('/auth/');
     if(error.response?.status == 401 && !isAuth && !original._retry){
         original._retry = true;
         try{

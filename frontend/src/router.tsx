@@ -2,12 +2,13 @@ import { createBrowserRouter, Navigate, Outlet } from 'react-router-dom'
 import { useAuthStore } from '@/stores/authStore'
 import LoginPage from '@/pages/LoginPage'
 import RegisterPage from '@/pages/RegisterPage'
-import HomePage from '@/pages/HomePage'
+import NexusListPage from './pages/NexusListPage'
+import NexusPage from './pages/NexusPage'
 
 // Guard: защищённые маршруты (аналог meta.requiresAuth)
 function ProtectedRoute() {
   const user = useAuthStore((s) => s.user)
-  if (!user) return <Navigate to="/login" replace />
+  if (user) return <Navigate to="/nexus" replace />
   return <Outlet />
 }
 
@@ -28,6 +29,10 @@ export const router = createBrowserRouter([
   },
   {
     element: <ProtectedRoute />,
-    children: [{ path: '/', element: <HomePage /> }]
+    children: [
+      { path: '/', element: <Navigate to="/nexus" replace /> },
+      { path: '/nexus', element: <NexusListPage /> },
+      { path: '/nexus/:id', element: <NexusPage /> }
+    ]
   }
 ])

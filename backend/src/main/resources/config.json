@@ -4,8 +4,9 @@
         "port": 8080
     },
     "db":{
-        "url": "postgresql://postgres.enuvghbbvsnmjbgjpwhz:JLTaIOJqDxlu5j5n@aws-1-eu-west-1.pooler.supabase.com:6543/postgres?pgbouncer=true",
-        "poolSize": 5
+        "url": "jdbc:postgresql://aws-1-eu-west-1.pooler.supabase.com:5432/postgres?user=postgres.enuvghbbvsnmjbgjpwhz&password=JLTaIOJqDxlu5j5n",
+        "poolSize": 5,
+        "sslMode":"REQUIRE"
     },
     "redis": {
         "host": "localhost",

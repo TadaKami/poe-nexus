@@ -4,11 +4,8 @@
         "port": 8080
     },
     "db":{
-        "host": "localhost",
-        "port": 5432,
-        "database": "poe_nexus",
-        "username": "nexus_adm",
-        "password": "${DB_PASSWORD}"
+        "url": "postgresql://postgres.enuvghbbvsnmjbgjpwhz:JLTaIOJqDxlu5j5n@aws-1-eu-west-1.pooler.supabase.com:6543/postgres?pgbouncer=true",
+        "poolSize": 5
     },
     "redis": {
         "host": "localhost",

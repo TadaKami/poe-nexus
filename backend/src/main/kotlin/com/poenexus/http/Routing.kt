@@ -29,10 +29,13 @@ abstract class RouteModule(protected val vertx: Vertx) {
                 replyError(ctx, e.status, e.code, e.message ?: e.code)
             } catch (e: DecodeException) {
                 replyError(ctx, 400, "bad_request", "Invalid JSON body")
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 e.printStackTrace()
                 //replyError(ctx, 500, "internal_error", "Internal server error")
-                replyError(ctx, 500, "internal_error", e.toString())
+                // DEV ONLY: вся цепочка причин в ответе
+                val chain = generateSequence<Throwable>(e) { it.cause }
+                    .joinToString(" | ") { it.toString() }
+                replyError(ctx, 500, "internal_error", chain)
             }
         }
     }

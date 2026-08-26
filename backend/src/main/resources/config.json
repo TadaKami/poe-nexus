@@ -7,7 +7,7 @@
         
         "url": "postgresql://postgres.enuvghbbvsnmjbgjpwhz:JLTaIOJqDxlu5j5n@aws-1-eu-west-1.pooler.supabase.com:5432/postgres",
         "poolSize": 5,
-        "sslMode":"REQUIRE"
+        "sslMode":"DISABLE"
     },
     "redis": {
         "host": "localhost",

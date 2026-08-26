@@ -21,7 +21,7 @@ data class AppConfig(
                 ?: json.getJsonObject("db").getString("url")
 
             val sslMode = System.getenv("PG_SSL_MODE")
-                ?: json.getJsonObject("db").getString("sslMode", "REQUIRE")
+                ?: json.getJsonObject("db").getString("sslMode", "DISABLE")
 
             var jwtSecret = System.getenv("JWT_SECRET")
                 ?: json.getJsonObject("jwt").getString("secret")

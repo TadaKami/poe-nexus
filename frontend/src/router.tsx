@@ -8,14 +8,14 @@ import NexusPage from './pages/NexusPage'
 // Guard: защищённые маршруты (аналог meta.requiresAuth)
 function ProtectedRoute() {
   const user = useAuthStore((s) => s.user)
-  if (user) return <Navigate to="/nexus" replace />
+  if (!user) return <Navigate to="/login" replace />
   return <Outlet />
 }
 
 // Guard: гостевые маршруты для авторизованных
 function GuestRoute() {
   const user = useAuthStore((s) => s.user)
-  if (user) return <Navigate to="/" replace />
+  if (user) return <Navigate to="/nexus" replace />
   return <Outlet />
 }
 

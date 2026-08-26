@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useAuthStore } from '@/stores/authStore'
 import { useNexusStore } from '@/stores/nexusStore'
@@ -15,6 +15,20 @@ export default function NexusPage() {
   const myRole = current?.members.find((m) => m.userId === user?.id)?.role ?? 'member'
   const canManage = myRole === 'leader' || myRole === 'officer'
   const isLeader = myRole === 'leader'
+
+
+  const [copied, setCopied] = useState(false)
+
+  async function copyCode() {
+    if (!invite) return
+    try {
+      await navigator.clipboard.writeText(invite.code)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch {
+      // браузер запретил clipboard — молча игнорируем
+    }
+  }  
 
   return (
     <main className="min-h-screen bg-poe-bg p-8 text-amber-100">
@@ -41,7 +55,15 @@ export default function NexusPage() {
               </button>
               {invite && (
                 <p className="mt-2 text-sm">
-                  Код: <span className="font-mono text-poe-gold">{invite.code}</span>{' '}
+                  Код:{' '}
+                  <span
+                    className="font-mono text-poe-gold cursor-pointer hover:underline"
+                    title="Кликни, чтобы скопировать"
+                    onClick={copyCode}
+                  >
+                    {invite.code}
+                  </span>{' '}
+                  {copied && <span className="text-xs text-green-400">Скопировано!</span>}{' '}
                   (действует до {invite.expiresAt})
                 </p>
               )}

@@ -46,7 +46,7 @@ export default function LoginPage(){
                     className={inputCls}
                 />
                 {error && <p className="text-sm text-red-400">{error}</p>}
-                +                <button
+                <button
                     className="w-full bg-poe-gold/90 hover:bg-poe-gold text-black font-semibold py-2 disabled:opacity-50"
                     disabled={loading}
                 >

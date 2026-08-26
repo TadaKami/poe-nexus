@@ -28,6 +28,7 @@ dependencies {
     
     // Данные: PostgreSQL + Redis
     implementation("io.vertx:vertx-pg-client")
+    implementation("com.ongres.scram:client:2.1")
     implementation("io.vertx:vertx-redis-client")
 
     // Конфигурация

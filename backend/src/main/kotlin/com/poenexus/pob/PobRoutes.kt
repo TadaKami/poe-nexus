@@ -18,6 +18,7 @@ class PobRoutes(
         router.post("/api/pob").handler(auth).handler(::handleSave)
         router.get("/api/pob").handler(auth).handler(::handleGet)
         router.post("/api/pob/diff").handler(auth).handler(::handleDiff)
+        router.get("/api/pob/tree/:version").handler(auth).handler(::handleTree)
     }
 
     private fun handleSave(ctx: RoutingContext) = launchSafe(ctx) {
@@ -36,4 +37,8 @@ class PobRoutes(
     private fun handleDiff(ctx: RoutingContext) = launchSafe(ctx) {
         ctx.json(service.diff(ctx.userId()))
     }
+
+    private fun handleTree(ctx: RoutingContext) = launchSafe(ctx) {
+        ctx.json(service.treePayload(ctx.pathParam("version")))
+    }    
 }

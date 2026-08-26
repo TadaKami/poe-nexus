@@ -52,8 +52,32 @@ data class PassiveNodeInfo(
     val notable: Boolean
 )
 
+data class GearScoreDto(
+    val slot: String,
+    val currentName: String?,
+    val targetName: String,
+    val score: Int,               // 0..100 — насколько current близок к таргету
+    val missingMods: List<String>
+)
+
+data class TreeNodeDto(
+    val id: Int,
+    val x: Double,
+    val y: Double,
+    val kind: String,             // normal | notable | keystone
+    val icon: String?,
+    val name: String?
+)
+
+data class TreePayload(
+    val nodes: List<TreeNodeDto>,
+    val edges: List<List<Int>>
+)
+
 data class DiffReport(
     val entries: List<DiffEntry>,
     val missingPassives: List<PassiveNodeInfo>,
+    val missingPassiveIds: List<Int>,
+    val gearScores: List<GearScoreDto>,
     val levelGap: Int
 )

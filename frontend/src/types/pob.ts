@@ -49,8 +49,32 @@ export interface PassiveNodeInfo {
   notable: boolean
 }
 
+export interface GearScoreDto {
+  slot: string
+  currentName: string | null
+  targetName: string
+  score: number
+  missingMods: string[]
+}
+
+export interface TreeNodeDto {
+  id: number
+  x: number
+  y: number
+  kind: 'normal' | 'notable' | 'keystone'
+  icon: string | null
+  name: string | null
+}
+
+export interface TreePayload {
+  nodes: TreeNodeDto[]
+  edges: number[][]
+}
+
 export interface DiffReport {
   entries: DiffEntry[]
   missingPassives: PassiveNodeInfo[]
+  missingPassiveIds: number[]
+  gearScores: GearScoreDto[]  
   levelGap: number
 }

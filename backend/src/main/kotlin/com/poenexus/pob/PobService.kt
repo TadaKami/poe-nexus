@@ -61,8 +61,10 @@ class PobService(private val vertx: Vertx, private val pool: PgPool, private val
         val version = target.parsed.treeVersion ?: current.parsed.treeVersion ?: "3_29"
         val missingPassives = tree.resolve(version, core.missingPassiveIds)
         val levelGap = maxOf(0, (target.parsed.level ?: 0) - (current.parsed.level ?: 0))
-        return DiffReport(core.entries, missingPassives, levelGap)
+        return DiffReport(core.entries, missingPassives, core.missingPassiveIds, core.gearScores, levelGap)
     }
+
+    suspend fun treePayload(version: String): TreePayload = tree.payload(version)
 
     // ---------- internals ----------
 

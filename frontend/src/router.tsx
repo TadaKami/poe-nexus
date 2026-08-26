@@ -4,6 +4,7 @@ import LoginPage from '@/pages/LoginPage'
 import RegisterPage from '@/pages/RegisterPage'
 import NexusListPage from './pages/NexusListPage'
 import NexusPage from './pages/NexusPage'
+import ProfilePage from './pages/ProfilePage'
 
 // Guard: защищённые маршруты (аналог meta.requiresAuth)
 function ProtectedRoute() {
@@ -32,7 +33,8 @@ export const router = createBrowserRouter([
     children: [
       { path: '/', element: <Navigate to="/nexus" replace /> },
       { path: '/nexus', element: <NexusListPage /> },
-      { path: '/nexus/:id', element: <NexusPage /> }
+      { path: '/nexus/:id', element: <NexusPage /> },
+      { path: '/profile', element: <ProfilePage /> }
     ]
   }
 ])

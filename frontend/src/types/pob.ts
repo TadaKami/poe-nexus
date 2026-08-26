@@ -61,7 +61,7 @@ export interface TreeNodeDto {
   id: number
   x: number
   y: number
-  kind: 'normal' | 'notable' | 'keystone'
+  kind: 'normal' | 'notable' | 'keystone' | 'mastery'
   icon: string | null
   name: string | null
 }

@@ -16,6 +16,10 @@ const rarityCls: Record<string, string> = {
   NORMAL: 'text-gray-200'
 }
 
+// Иконки грузим через наш бэкенд-прокси (адблок их иначе режет)
+const proxyIcon = (url: string) => `/api/pob/icon?url=${encodeURIComponent(url)}`
+
+
 function gemIcon(g: GemDto): string {
   const base = g.name.replace(/ /g, '_')
   const suffix = (g.skillId ?? '').startsWith('Support') ? '_support_icon' : '_skill_icon'
@@ -131,7 +135,7 @@ export default function ProfilePage() {
                     {diff.missingPassives.map((p) => (
                       <div key={p.id} className="flex gap-3 border border-poe-gold/20 bg-poe-panel p-3">
                         {p.icon && (
-                          <img src={p.icon} alt="" className="h-10 w-10"
+                          <img src={proxyIcon(p.icon)} alt="" className="h-10 w-10"
                             onError={(e) => { e.currentTarget.style.display = 'none' }} />
                         )}
                         <div>
@@ -224,7 +228,7 @@ function GemGrid({ title, gems, other }: { title: string; gems: GemDto[]; other:
           return (
             <div key={i} title={`${g.name} ${g.level}/${g.quality}${g.slot ? ` · ${g.slot}` : ''}`}
               className={`flex items-center gap-2 border bg-poe-panel px-2 py-1 ${differs ? 'border-red-500/70' : 'border-poe-gold/20'}`}>
-              <img src={gemIcon(g)} alt="" className="h-7 w-7"
+              <img src={proxyIcon(gemIcon(g))} alt="" className="h-7 w-7"
                 onError={(e) => { e.currentTarget.style.display = 'none' }} />
               <div className="text-xs">
                 <p className="text-amber-100">{g.name}</p>
@@ -239,7 +243,23 @@ function GemGrid({ title, gems, other }: { title: string; gems: GemDto[]; other:
   )
 }
 
+// Дерево спрятано по умолчанию: ~5000 SVG-элементов не должны жить в DOM постоянно.
 function TreePanel({ version, missing }: { version: string; missing: Set<number> }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="sticky top-4">
+      <button onClick={() => setOpen((v) => !v)} className={btnPrimary}>
+        {open ? 'Скрыть дерево пассивок' : 'Показать дерево пассивок'}
+      </button>
+      <p className="mt-2 text-xs text-amber-100/60">
+        Красным — ноды таргета, не взятые в current. Колесо — зум, мышь — пан.
+      </p>
+      {open && <TreeSvg version={version} missing={missing} />}
+    </div>
+  )
+}
+
+function TreeSvg({ version, missing }: { version: string; missing: Set<number> }) {
   const { tree, fetchTree } = usePobStore()
   const [view, setView] = useState({ scale: 1, tx: 0, ty: 0 })
   const drag = useRef<{ x: number; y: number } | null>(null)
@@ -306,16 +326,15 @@ function TreePanel({ version, missing }: { version: string; missing: Set<number>
             })}
             {tree.nodes.map((n) => {
               const miss = missing.has(n.id)
-              const r = n.kind === 'keystone' ? 160 : n.kind === 'notable' ? 110 : 55
+              const r = n.kind === 'keystone' ? 160 : n.kind === 'notable' ? 110 : n.kind === 'mastery' ? 90 : 55
               return (
-                <g key={n.id}>
-                  <circle cx={n.x} cy={n.y} r={r}
-                    fill={miss ? '#7f1d1d' : n.kind === 'normal' ? '#44403c' : '#57534e'}
-                    stroke={miss ? '#ef4444' : '#1c1917'} strokeWidth={miss ? 30 : 12} />
-                  {n.kind !== 'normal' && n.icon && (
-                    <image href={n.icon} x={n.x - r} y={n.y - r} width={r * 2} height={r * 2} />
-                  )}
-                </g>
+                // Без <image>: poecdn недоступен из нашей сети, а сотни запросов по 1с = лаги.
+                // Имя ноды — в нативный SVG-тултип.
+                <circle key={n.id} cx={n.x} cy={n.y} r={r}
+                  fill={miss ? '#7f1d1d' : n.kind === 'normal' ? '#44403c' : '#57534e'}
+                  stroke={miss ? '#ef4444' : '#1c1917'} strokeWidth={miss ? 30 : 12}>
+                  <title>{n.name ?? `#${n.id}`}</title>
+                </circle>
               )
             })}
           </svg>

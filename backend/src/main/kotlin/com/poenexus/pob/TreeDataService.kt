@@ -55,6 +55,7 @@ class TreeDataService(private val vertx: Vertx) {
                 kind = when {
                     n.getBoolean("ks") == true -> "keystone"
                     n.getBoolean("notable") == true -> "notable"
+                    n.getBoolean("isMastery") == true || (n.getString("icon") ?: "").contains("Mastery") -> "mastery"
                     else -> "normal"
                 },
                 icon = when {
@@ -118,6 +119,7 @@ class TreeDataService(private val vertx: Vertx) {
         root.getJsonObject("groups")?.let { groups ->
             for (gk in groups.fieldNames()) {
                 val g = groups.getJsonObject(gk) ?: continue
+                val orbits = g.getJsonArray("orbits")
                 val gx = (g.getValue("x") as? Number)?.toDouble() ?: continue
                 val gy = (g.getValue("y") as? Number)?.toDouble() ?: continue
                 val idsArr = g.getJsonArray("nodes") ?: continue
@@ -126,9 +128,11 @@ class TreeDataService(private val vertx: Vertx) {
                     val id = idsArr.getString(idx) ?: continue
                     val node = out[id] ?: JsonObject().put("id", id.toIntOrNull() ?: -1).also { out[id] = it }
                     if (node.getValue("x") == null) {
-                        // MVP-аппроксимация: ноды группы по окружности вокруг центра
+                        // раскладка по орбитам, как в оригинальном дереве
+                        val orbit = if (orbits != null && orbits.size() > 0)
+                            (orbits.getValue(minOf(idx, orbits.size() - 1)) as? Number)?.toInt() ?: 0 else 0
                         val angle = 2.0 * Math.PI * idx / count
-                        val r = if (count == 1) 0.0 else 130.0
+                        val r = orbit * 80.0
                         node.put("x", gx + r * Math.cos(angle))
                         node.put("y", gy + r * Math.sin(angle))
                     }

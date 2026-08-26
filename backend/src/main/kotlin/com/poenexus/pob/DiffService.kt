@@ -40,7 +40,14 @@ data class DiffCore(
             val tItem = target.items.firstOrNull { it.name == tName } ?: continue
             val cName = current.gear[slot]
             val cItem = cName?.let { cn -> current.items.firstOrNull { it.name == cn } }
-            val (score, missingMods) = if (cItem == null) 0 to tItem.mods else scoreItems(cItem, tItem)
+            val (score, missingMods) = when {
+                cItem == null -> 0 to tItem.mods
+                // разные уники в слоте — не mod-diff, а вердикт «заменить»
+                tItem.rarity == "UNIQUE" && cItem.rarity == "UNIQUE"
+                    && !cItem.name.equals(tItem.name, true) ->
+                    0 to listOf("Заменить на: ${tItem.name} (${tItem.base})")
+                else -> scoreItems(cItem, tItem)
+            }
             gearScores += GearScoreDto(slot, cName, tName, score, missingMods)
         }
 

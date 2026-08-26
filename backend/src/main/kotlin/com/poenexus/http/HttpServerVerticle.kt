@@ -16,6 +16,7 @@ import io.vertx.kotlin.coroutines.await
 import com.poenexus.pob.PobRoutes
 import com.poenexus.pob.PobService
 import com.poenexus.pob.TreeDataService
+import com.poenexus.pob.IconProxyService
 
 class HttpServerVerticle : CoroutineVerticle() {
 
@@ -26,6 +27,7 @@ class HttpServerVerticle : CoroutineVerticle() {
         val authService = AuthService(pool, tokenService)
         val nexusService = NexusService(pool)
         val pobService = PobService(vertx, pool, TreeDataService(vertx))
+        
         val authMiddleware = AuthMiddleware(tokenService)
 
         val router = Router.router(vertx)
@@ -35,6 +37,7 @@ class HttpServerVerticle : CoroutineVerticle() {
         AuthRoutes(vertx, authService, tokenService).mount(router)
         NexusRoutes(vertx, nexusService, authMiddleware).mount(router)
         PobRoutes(vertx, pobService, authMiddleware).mount(router)
+        IconProxyService(vertx).mount(router)
 
         vertx.createHttpServer()
             .requestHandler(router)

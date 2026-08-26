@@ -23,7 +23,7 @@ create table nexus_invites(
     code varchar(32) not null,
     created_by uuid not null REFERENCES users(id),
     expires_at TIMESTAMPTZ not null,
-    max_users int,
+    max_uses int,
     used_count int not null default 0,
     created_at TIMESTAMPTZ not null default now()
 );

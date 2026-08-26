@@ -39,6 +39,7 @@ class PobRoutes(
     }
 
     private fun handleTree(ctx: RoutingContext) = launchSafe(ctx) {
+        ctx.response().putHeader("Cache-Control", "public, max-age=3600")
         ctx.json(service.treePayload(ctx.pathParam("version")))
     }    
 }

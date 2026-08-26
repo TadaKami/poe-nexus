@@ -20,6 +20,7 @@ import java.util.Base64
 import java.util.UUID
 import java.util.zip.Inflater
 import javax.xml.parsers.DocumentBuilderFactory
+import com.poenexus.ws.Events
 
 class PobService(private val vertx: Vertx, private val pool: PgPool, private val tree: TreeDataService) {
 
@@ -45,6 +46,7 @@ class PobService(private val vertx: Vertx, private val pool: PgPool, private val
         ).execute(
             Tuple.of(UUID.fromString(userId), scope, url, hash, JsonObject.mapFrom(normalized).encode())
         ).await().first()
+        Events.user(vertx, userId, "pob.updated", JsonObject().put("scope", scope))
         return rowToDto(row)
     }
 

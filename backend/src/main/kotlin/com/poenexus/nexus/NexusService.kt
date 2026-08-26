@@ -2,6 +2,9 @@ package com.poenexus.nexus
 
 import com.poenexus.http.HttpError
 import com.poenexus.infra.Db.inTransaction
+import com.poenexus.ws.Events
+import io.vertx.core.Vertx
+import io.vertx.core.json.JsonObject
 import io.vertx.kotlin.coroutines.await
 import io.vertx.pgclient.PgPool
 import io.vertx.sqlclient.Tuple
@@ -10,7 +13,7 @@ import java.time.OffsetDateTime
 import java.util.Base64
 import java.util.UUID
 
-class NexusService(private val pool: PgPool) {
+class NexusService(private val vertx: Vertx, private val pool: PgPool) {
 
     private val random = SecureRandom()
 
@@ -106,7 +109,7 @@ class NexusService(private val pool: PgPool) {
             conn.preparedQuery("UPDATE nexus_invites SET used_count = used_count + 1 WHERE id = $1")
                 .execute(Tuple.of(inv.getValue("id"))).await()
         }
-        // TODO(Фаза 2): vertx.eventBus().publish("nexus.{id}.members.changed", ...)
+        notifyNexus(nid.toString(), "nexus.members.changed")
         return nexusDto(nid.toString())
     }
 
@@ -116,6 +119,7 @@ class NexusService(private val pool: PgPool) {
         if (requireMember(targetId, nexusId) == "leader") throw HttpError(403, "forbidden", "Cannot change leader role")
         pool.preparedQuery("UPDATE nexus_members SET role = $1 WHERE nexus_id = $2 AND user_id = $3")
             .execute(Tuple.of(newRole, UUID.fromString(nexusId), UUID.fromString(targetId))).await()
+        notifyNexus(nexusId, "nexus.members.changed")
     }
 
     suspend fun kick(actorId: String, nexusId: String, targetId: String) {
@@ -124,16 +128,45 @@ class NexusService(private val pool: PgPool) {
         val targetRole = requireMember(targetId, nexusId)
         if (targetRole == "leader") throw HttpError(403, "forbidden", "Cannot kick leader")
         if (targetRole == "officer" && actorRole != "leader") throw HttpError(403, "forbidden", "Only leader can kick officer")
+
+        // СНОВА ВАЖНО: снимаем снапшот ДО удаления, чтобы кикнутый тоже получил событие
+        val membersBefore = memberIds(nexusId)
+        val nexusName = nexusName(nexusId)
+
         pool.preparedQuery("DELETE FROM nexus_members WHERE nexus_id = $1 AND user_id = $2")
             .execute(Tuple.of(UUID.fromString(nexusId), UUID.fromString(targetId))).await()
+
+        // Всем (включая кикнутого): обновить списки/детали
+        Events.users(vertx, membersBefore, "nexus.members.changed", JsonObject().put("nexusId", nexusId))
+        // Лично кикнутому: редирект + сообщение
+        Events.user(vertx, targetId, "nexus.kicked",
+            JsonObject().put("nexusId", nexusId).put("nexusName", nexusName))
     }
 
     suspend fun delete(actorId: String, nexusId: String) {
         if (requireMember(actorId, nexusId) != "leader") throw HttpError(403, "forbidden", "Leader only")
+        val membersBefore = memberIds(nexusId)
+        val nexusName = nexusName(nexusId)
         pool.preparedQuery("DELETE FROM nexuses WHERE id = $1").execute(Tuple.of(UUID.fromString(nexusId))).await()
+        Events.users(vertx, membersBefore, "nexus.deleted",
+            JsonObject().put("nexusId", nexusId).put("nexusName", nexusName))
     }
 
     // ---------- internals ----------
+
+    private suspend fun notifyNexus(nexusId: String, type: String) {
+        Events.users(vertx, memberIds(nexusId), type, JsonObject().put("nexusId", nexusId))
+    }
+
+    private suspend fun memberIds(nexusId: String): List<String> =
+        pool.preparedQuery("SELECT user_id FROM nexus_members WHERE nexus_id = $1")
+            .execute(Tuple.of(UUID.fromString(nexusId))).await()
+            .map { it.getValue("user_id").toString() }
+
+    private suspend fun nexusName(nexusId: String): String =
+        pool.preparedQuery("SELECT name FROM nexuses WHERE id = $1")
+            .execute(Tuple.of(UUID.fromString(nexusId))).await()
+            .firstOrNull()?.getString("name") ?: ""
 
     private suspend fun requireMember(userId: String, nexusId: String): String =
         pool.preparedQuery("SELECT role FROM nexus_members WHERE nexus_id = $1 AND user_id = $2")

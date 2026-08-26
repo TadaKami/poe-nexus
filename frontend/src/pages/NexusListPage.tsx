@@ -12,7 +12,7 @@ export default function NexusListPage() {
   const logout = useAuthStore((s) => s.logout)
   const navigate = useNavigate()
 
-  const { nexuses, loading, fetchMyNexuses, createNexus, joinByCode } = useNexusStore()
+  const { nexuses, loading, kickedNotice, setKickedNotice, fetchMyNexuses, createNexus, joinByCode } = useNexusStore()
 
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
@@ -62,6 +62,13 @@ export default function NexusListPage() {
           </button>
         </div>
       </header>
+
+      {kickedNotice && (
+        <div className="mb-4 flex items-center justify-between border border-red-400/40 bg-red-400/10 px-3 py-2 text-sm text-red-300">
+          <span>{kickedNotice}</span>
+          <button onClick={() => setKickedNotice(null)} className="ml-4 text-red-300/70 hover:text-red-300">✕</button>
+        </div>
+      )}      
 
       {error && <p className="mb-4 text-sm text-red-400">{error}</p>}
 

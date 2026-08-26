@@ -7,6 +7,8 @@ interface NexusState {
   current: NexusDetails | null
   invite: InviteDto | null
   loading: boolean
+  kickedNotice: string | null
+  setKickedNotice: (msg: string | null) => void
   fetchMyNexuses: () => Promise<void>
   createNexus: (name: string, description: string) => Promise<NexusDto>
   joinByCode: (code: string) => Promise<NexusDto>
@@ -21,6 +23,9 @@ export const useNexusStore = create<NexusState>((set, get) => ({
   current: null,
   invite: null,
   loading: false,
+  kickedNotice: null,
+
+  setKickedNotice: (msg) => set({ kickedNotice: msg }),
 
   async fetchMyNexuses() {
     set({ loading: true })

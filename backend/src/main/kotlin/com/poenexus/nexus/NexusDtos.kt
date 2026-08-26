@@ -37,3 +37,18 @@ data class InviteDto(
     val code: String,
     val expiresAt: String
 )
+
+data class MemberSynergyDto(
+    val userId: String,
+    val email: String,
+    val hasBuild: Boolean,
+    val auras: List<String>,
+    val curses: List<String>
+)
+
+data class SynergyDto(
+    val members: List<MemberSynergyDto>,
+    val auraCounts: Map<String, Int>,
+    val curseCounts: Map<String, Int>,
+    val duplicates: List<String>
+)

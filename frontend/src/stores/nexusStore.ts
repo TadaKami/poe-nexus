@@ -1,11 +1,12 @@
 import { create } from 'zustand'
 import { http } from '@/services/ApiService'
-import type { NexusDto, NexusDetails, InviteDto } from '@/types/nexus'
+import type { NexusDto, NexusDetails, InviteDto, SynergyDto } from '@/types/nexus'
 
 interface NexusState {
   nexuses: NexusDto[]
   current: NexusDetails | null
   invite: InviteDto | null
+  synergy: SynergyDto | null
   loading: boolean
   kickedNotice: string | null
   setKickedNotice: (msg: string | null) => void
@@ -13,6 +14,7 @@ interface NexusState {
   createNexus: (name: string, description: string) => Promise<NexusDto>
   joinByCode: (code: string) => Promise<NexusDto>
   fetchNexus: (id: string) => Promise<void>
+  fetchSynergy: (id: string) => Promise<void>
   generateInvite: (id: string) => Promise<void>
   changeRole: (nexusId: string, userId: string, role: string) => Promise<void>
   kick: (nexusId: string, userId: string) => Promise<void>
@@ -22,6 +24,7 @@ export const useNexusStore = create<NexusState>((set, get) => ({
   nexuses: [],
   current: null,
   invite: null,
+  synergy: null,
   loading: false,
   kickedNotice: null,
 
@@ -57,6 +60,11 @@ export const useNexusStore = create<NexusState>((set, get) => ({
     } finally {
       set({ loading: false })
     }
+  },
+
+  async fetchSynergy(id) {
+    const { data } = await http.get<SynergyDto>(`/nexus/${id}/synergy`)
+    set({ synergy: data })
   },
 
   async generateInvite(id) {

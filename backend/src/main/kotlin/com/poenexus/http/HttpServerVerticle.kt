@@ -17,6 +17,7 @@ import io.vertx.ext.web.handler.BodyHandler
 import io.vertx.ext.web.handler.LoggerHandler
 import io.vertx.kotlin.coroutines.CoroutineVerticle
 import io.vertx.kotlin.coroutines.await
+import com.poenexus.nexus.SynergyService
 
 class HttpServerVerticle : CoroutineVerticle() {
 
@@ -26,6 +27,7 @@ class HttpServerVerticle : CoroutineVerticle() {
         val tokenService = TokenService(cfg.jwtSecret, cfg.accessTtlMinutes)
         val authService = AuthService(pool, tokenService)
         val nexusService = NexusService(vertx, pool)
+        val synergyService = SynergyService(pool)
         val pobService = PobService(vertx, pool, TreeDataService(vertx))
         val authMiddleware = AuthMiddleware(tokenService)
         val wsHandler = WsHandler(vertx, tokenService)
@@ -35,7 +37,7 @@ class HttpServerVerticle : CoroutineVerticle() {
         router.route().handler(BodyHandler.create())
 
         AuthRoutes(vertx, authService, tokenService).mount(router)
-        NexusRoutes(vertx, nexusService, authMiddleware).mount(router)
+        NexusRoutes(vertx, nexusService, synergyService, authMiddleware).mount(router)
         PobRoutes(vertx, pobService, authMiddleware).mount(router)
 
         vertx.createHttpServer()

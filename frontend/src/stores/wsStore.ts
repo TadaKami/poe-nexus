@@ -101,6 +101,12 @@ function route(raw: string) {
         usePobStore.getState().fetchBuilds().catch(() => {})
         break
 
+      case 'nexus.synergy.changed': {
+        const nx = useNexusStore.getState()
+        if (nx.current && nx.current.nexus.id === payload.nexusId) nx.fetchSynergy(payload.nexusId).catch(() => {})
+        break
+      }        
+
       default:
         console.debug('[ws]', msg.type, payload)
     }

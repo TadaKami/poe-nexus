@@ -10,6 +10,7 @@ import io.vertx.ext.web.RoutingContext
 class NexusRoutes(
     vertx: Vertx,
     private val service: NexusService,
+    private val synergy: SynergyService,
     private val authMiddleware: AuthMiddleware
 ) : RouteModule(vertx) {
 
@@ -18,6 +19,7 @@ class NexusRoutes(
         router.get("/api/nexus").handler(auth).handler(::handleList)
         router.post("/api/nexus").handler(auth).handler(::handleCreate)
         router.get("/api/nexus/:id").handler(auth).handler(::handleDetails)
+        router.get("/api/nexus/:id/synergy").handler(auth).handler(::handleSynergy)
         router.post("/api/nexus/:id/invite").handler(auth).handler(::handleInvite)
         router.post("/api/nexus/join").handler(auth).handler(::handleJoin)
         router.patch("/api/nexus/:id/members/:userId").handler(auth).handler(::handleRoleChange)
@@ -37,6 +39,10 @@ class NexusRoutes(
 
     private fun handleDetails(ctx: RoutingContext) = launchSafe(ctx) {
         ctx.json(service.details(ctx.userId(), ctx.pathParam("id")))
+    }
+
+    private fun handleSynergy(ctx: RoutingContext) = launchSafe(ctx) {
+        ctx.json(synergy.synergy(ctx.pathParam("id")))
     }
 
     private fun handleInvite(ctx: RoutingContext) = launchSafe(ctx) {

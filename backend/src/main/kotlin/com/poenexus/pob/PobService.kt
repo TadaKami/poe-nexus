@@ -21,7 +21,7 @@ import java.util.UUID
 import java.util.zip.Inflater
 import javax.xml.parsers.DocumentBuilderFactory
 
-class PobService(private val vertx: Vertx, private val pool: PgPool) {
+class PobService(private val vertx: Vertx, private val pool: PgPool, private val tree: TreeDataService) {
 
     private val client = WebClient.create(vertx)
 

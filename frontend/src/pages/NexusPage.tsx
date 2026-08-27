@@ -83,12 +83,34 @@ export default function NexusPage() {
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                 {synergy.members.map((m) => (
                   <div key={m.userId} className="border border-poe-gold/20 bg-poe-panel p-3">
-                    <p className="text-sm text-amber-100">{m.email}</p>
+                    <p className="text-sm text-amber-100">
+                      {m.email}{' '}
+                      {m.aura?.auraBot && (
+                        <span className="rounded bg-poe-blood/40 px-1.5 py-0.5 text-xs text-red-300">Аура-бот</span>
+                      )}
+                    </p>
                     {!m.hasBuild && (
                       <p className="mt-1 text-xs text-amber-100/50">
                         Нет сохранённого PoB — пусть закинет билд в «Профиль PoB»
                       </p>
                     )}
+                    {m.aura && (
+                      <div className="mt-2 space-y-1 text-xs">
+                        <p className="text-amber-100/80">
+                          Резисты:{' '}
+                          <span className="text-orange-300">🔥{m.aura.fireResist}%</span>{' '}
+                          <span className="text-sky-300">❄{m.aura.coldResist}%</span>{' '}
+                          <span className="text-yellow-300">⚡{m.aura.lightResist}%</span>{' '}
+                          <span className="text-purple-300">☠{m.aura.chaosResist}%</span>{' '}
+                          · макс <b className="text-amber-100">{m.aura.maxResist}%</b>
+                        </p>
+                        <p className="text-amber-100/80">
+                          Aura Effect <b className="text-poe-gold">+{m.aura.auraEffect}%</b> ·
+                          Area Effect +{m.aura.areaEffect}% ·
+                          ResEff +{m.aura.reservationEff}%
+                        </p>
+                      </div>
+                    )}                    
                     <div className="mt-2 flex flex-wrap gap-1">
                       {m.auras.map((a) => (
                         <span key={a} className="rounded bg-poe-gold/20 px-1.5 py-0.5 text-xs text-poe-gold">{a}</span>

@@ -9,20 +9,24 @@ import kotlinx.coroutines.withContext
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Резолвит ID пассивных нод в имена/эффекты/иконки.
- * Источник: TreeData из репозитория PoB (версия = Spec@treeVersion),
- * фолбэк — официальный data.json GGG. Кэш в памяти per-version.
+ * Данные пассивного дерева (официальный экспорт GGG, только лига).
+ * Кэш: ноды + masteryEffects per-version.
  */
 class TreeDataService(private val vertx: Vertx) {
 
+    private data class RawTree(
+        val nodes: Map<String, JsonObject>,
+        val masteryEffects: Map<String, JsonObject>
+    )
+
     private val client = WebClient.create(vertx)
-    private val cache = ConcurrentHashMap<String, Map<String, JsonObject>>()
+    private val cache = ConcurrentHashMap<String, RawTree>()
 
     suspend fun resolve(version: String, ids: List<Int>): List<PassiveNodeInfo> {
         if (ids.isEmpty()) return emptyList()
-        val map = cache[version] ?: load(version).also { cache[version] = it }
+        val raw = cache[version] ?: load(version).also { cache[version] = it }
         return ids.mapNotNull { id ->
-            val n = map[id.toString()] ?: return@mapNotNull null
+            val n = raw.nodes[id.toString()] ?: return@mapNotNull null
             val iconRaw = n.getString("icon") ?: ""
             PassiveNodeInfo(
                 id = id,
@@ -39,13 +43,30 @@ class TreeDataService(private val vertx: Vertx) {
         }
     }
 
-    /** Конденсированное дерево для SVG-визуализации: ноды + рёбра. */
+    /** Текстовые моды взятых нод (sd) + выбранных mastery-эффектов. */
+    suspend fun statLines(version: String, nodeIds: List<Int>, masteryEffectIds: List<Int>): List<String> {
+        val raw = cache[version] ?: load(version).also { cache[version] = it }
+        val lines = mutableListOf<String>()
+        for (id in nodeIds) {
+            raw.nodes[id.toString()]?.getJsonArray("sd")?.let { sd ->
+                for (i in 0 until sd.size()) sd.getString(i)?.let { lines += it }
+            }
+        }
+        for (eid in masteryEffectIds) {
+            raw.masteryEffects[eid.toString()]?.getJsonArray("sd")?.let { sd ->
+                for (i in 0 until sd.size()) sd.getString(i)?.let { lines += it }
+            }
+        }
+        return lines
+    }
+
+    /** Конденсированное дерево для SVG: ноды + рёбра. */
     suspend fun payload(version: String): TreePayload {
-        val map = cache[version] ?: load(version).also { cache[version] = it }
+        val raw = cache[version] ?: load(version).also { cache[version] = it }
         val nodes = mutableListOf<TreeNodeDto>()
         val ids = HashSet<Int>()
-        for ((key, n) in map) {
-            if (n.getString("ascendancyName") != null) continue // ascendancy-кластеры растягивают bounds
+        for ((key, n) in raw.nodes) {
+            if (n.getString("ascendancyName") != null) continue
             val id = n.getInteger("id") ?: key.toIntOrNull() ?: continue
             val iconRaw = n.getString("icon") ?: ""
             nodes += TreeNodeDto(
@@ -55,7 +76,7 @@ class TreeDataService(private val vertx: Vertx) {
                 kind = when {
                     n.getBoolean("ks") == true -> "keystone"
                     n.getBoolean("notable") == true -> "notable"
-                    n.getBoolean("isMastery") == true || (n.getString("icon") ?: "").contains("Mastery") -> "mastery"
+                    n.getBoolean("isMastery") == true || iconRaw.contains("Mastery") -> "mastery"
                     else -> "normal"
                 },
                 icon = when {
@@ -69,7 +90,7 @@ class TreeDataService(private val vertx: Vertx) {
         }
         val edges = mutableListOf<List<Int>>()
         val seen = HashSet<Long>()
-        for ((key, n) in map) {
+        for ((key, n) in raw.nodes) {
             val id = n.getInteger("id") ?: key.toIntOrNull() ?: continue
             val out = n.getJsonArray("out") ?: continue
             for (i in 0 until out.size()) {
@@ -81,10 +102,9 @@ class TreeDataService(private val vertx: Vertx) {
             }
         }
         return TreePayload(nodes, edges)
-    }    
+    }
 
-    private suspend fun load(version: String): Map<String, JsonObject> = withContext(Dispatchers.IO) {
-        // Официальный экспорт GGG: текущая лига, без ruthless
+    private suspend fun load(version: String): RawTree = withContext(Dispatchers.IO) {
         val sources = listOf(
             "https://raw.githubusercontent.com/grindinggear/skilltree-export/master/data.json"
         )
@@ -94,19 +114,21 @@ class TreeDataService(private val vertx: Vertx) {
                 println("[TreeData] $url -> ${resp.statusCode()}")
                 if (resp.statusCode() != 200) continue
                 val root = JsonObject(resp.bodyAsString())
-                if (root == null) { println("[TreeData] LuaJson вернул null для $url"); continue }
-                val map = normalize(root)
-                println("[TreeData] normalize: ${map.size} nodes из $url")
-                if (map.isNotEmpty()) return@withContext map
+                val nodes = normalize(root)
+                val me = mutableMapOf<String, JsonObject>()
+                root.getJsonObject("masteryEffects")?.let { m ->
+                    for (k in m.fieldNames()) m.getJsonObject(k)?.let { me[k] = it }
+                }
+                println("[TreeData] normalize: ${nodes.size} nodes, ${me.size} masteryEffects")
+                if (nodes.isNotEmpty()) return@withContext RawTree(nodes, me)
             } catch (e: Exception) {
-                // источник недоступен — пробуем следующий
                 println("[TreeData] ошибка для $url: $e")
             }
         }
-        emptyMap()
+        RawTree(emptyMap(), emptyMap())
     }
 
-    /** Сливаем nodes (детали) и groups (координаты). */
+    /** Сливаем nodes (детали) и groups (координаты, раскладка по орбитам). */
     private fun normalize(root: JsonObject): Map<String, JsonObject> {
         val out = HashMap<String, JsonObject>()
         root.getJsonObject("nodes")?.let { nodes ->
@@ -128,7 +150,6 @@ class TreeDataService(private val vertx: Vertx) {
                     val id = idsArr.getString(idx) ?: continue
                     val node = out[id] ?: JsonObject().put("id", id.toIntOrNull() ?: -1).also { out[id] = it }
                     if (node.getValue("x") == null) {
-                        // раскладка по орбитам, как в оригинальном дереве
                         val orbit = if (orbits != null && orbits.size() > 0)
                             (orbits.getValue(minOf(idx, orbits.size() - 1)) as? Number)?.toInt() ?: 0 else 0
                         val angle = 2.0 * Math.PI * idx / count

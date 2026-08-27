@@ -1,30 +1,18 @@
 package com.poenexus.nexus
 
+import com.poenexus.pob.AuraStatsDto
+import com.poenexus.pob.GemTaxonomy
+import io.vertx.core.json.JsonObject
 import io.vertx.kotlin.coroutines.await
 import io.vertx.pgclient.PgPool
 import io.vertx.sqlclient.Tuple
 import java.util.UUID
-import io.vertx.core.json.JsonObject
 
 /**
- * Модуль 2: что каждый участник несёт в пати (ауры/проклятия)
+ * Модуль 2: что каждый участник несёт в пати (ауры/проклятия/аура-паспорт)
  * из его сохранённого current-PoB.
  */
 class SynergyService(private val pool: PgPool) {
-
-    companion object {
-        val AURAS = setOf(
-            "Malevolence", "Discipline", "Flesh and Stone", "Tempest Shield", "Haste", "Grace",
-            "Wrath", "Zealotry", "Anger", "Hatred", "Pride", "Vitality", "Clarity",
-            "Determination", "Precision", "Purity of Elements", "Purity of Fire",
-            "Purity of Ice", "Purity of Lightning", "War Banner", "Defiance Banner", "Battlemage's Cry"
-        )
-        val CURSES = setOf(
-            "Enfeeble", "Despair", "Punishment", "Temporal Chains", "Vulnerability",
-            "Elemental Weakness", "Flammability", "Frostbite", "Conductivity",
-            "Assassin's Mark", "Warlord's Mark", "Sniper's Mark"
-        )
-    }
 
     suspend fun synergy(nexusId: String): SynergyDto {
         val rows = pool.preparedQuery(
@@ -42,22 +30,37 @@ class SynergyService(private val pool: PgPool) {
         for (r in rows) {
             val auras = mutableListOf<String>()
             val curses = mutableListOf<String>()
-            val parsed = r.getString("parsed_data")?.let { JsonObject(it) }
+            // pg-client в нашем сетапе отдаёт jsonb как String
+            val parsed = r.getString("parsed_data")?.let { runCatching { JsonObject(it) }.getOrNull() }
             parsed?.getJsonArray("gems")?.let { gems ->
                 for (i in 0 until gems.size()) {
                     val name = gems.getJsonObject(i)?.getString("name") ?: continue
                     when (name) {
-                        in AURAS -> { auras += name; auraCounts[name] = (auraCounts[name] ?: 0) + 1 }
-                        in CURSES -> { curses += name; curseCounts[name] = (curseCounts[name] ?: 0) + 1 }
+                        in GemTaxonomy.AURAS -> { auras += name; auraCounts[name] = (auraCounts[name] ?: 0) + 1 }
+                        in GemTaxonomy.CURSES -> { curses += name; curseCounts[name] = (curseCounts[name] ?: 0) + 1 }
                     }
                 }
+            }
+            val aura = parsed?.getJsonObject("aura")?.let { a ->
+                AuraStatsDto(
+                    a.getBoolean("auraBot") ?: false,
+                    a.getInteger("auraEffect") ?: 0,
+                    a.getInteger("areaEffect") ?: 0,
+                    a.getInteger("reservationEff") ?: 0,
+                    a.getInteger("fireResist") ?: 0,
+                    a.getInteger("coldResist") ?: 0,
+                    a.getInteger("lightResist") ?: 0,
+                    a.getInteger("chaosResist") ?: 0,
+                    a.getInteger("maxResist") ?: 0
+                )
             }
             members += MemberSynergyDto(
                 r.getValue("user_id").toString(),
                 r.getString("email"),
                 parsed != null,
                 auras,
-                curses
+                curses,
+                aura
             )
         }
 

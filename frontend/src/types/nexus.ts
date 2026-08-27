@@ -29,6 +29,7 @@ export interface MemberSynergyDto {
   hasBuild: boolean
   auras: string[]
   curses: string[]
+  aura: AuraStatsDto | null
 }
 
 export interface SynergyDto {
@@ -36,4 +37,16 @@ export interface SynergyDto {
   auraCounts: Record<string, number>
   curseCounts: Record<string, number>
   duplicates: string[]
+}
+
+export interface AuraStatsDto {
+  auraBot: boolean
+  auraEffect: number
+  areaEffect: number
+  reservationEff: number
+  fireResist: number
+  coldResist: number
+  lightResist: number
+  chaosResist: number
+  maxResist: number
 }

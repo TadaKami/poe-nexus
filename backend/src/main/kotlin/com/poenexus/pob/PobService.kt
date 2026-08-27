@@ -1,6 +1,7 @@
 package com.poenexus.pob
 
 import com.poenexus.http.HttpError
+import com.poenexus.ws.Events
 import io.vertx.core.Vertx
 import io.vertx.core.json.JsonObject
 import io.vertx.ext.web.client.WebClient
@@ -20,7 +21,6 @@ import java.util.Base64
 import java.util.UUID
 import java.util.zip.Inflater
 import javax.xml.parsers.DocumentBuilderFactory
-import com.poenexus.ws.Events
 
 class PobService(private val vertx: Vertx, private val pool: PgPool, private val tree: TreeDataService) {
 
@@ -68,6 +68,9 @@ class PobService(private val vertx: Vertx, private val pool: PgPool, private val
     }
 
     suspend fun treePayload(version: String): TreePayload = tree.payload(version)
+
+    // ---------- internals ----------
+
     /** Билд изменился → пересчитываем синергию у всех со-нексусников. */
     private suspend fun notifyNexuses(userId: String) {
         val nexusIds = pool.preparedQuery("SELECT nexus_id FROM nexus_members WHERE user_id = $1")
@@ -79,11 +82,8 @@ class PobService(private val vertx: Vertx, private val pool: PgPool, private val
                 .map { it.getValue("user_id").toString() }
             Events.users(vertx, memberIds, "nexus.synergy.changed", JsonObject().put("nexusId", nid))
         }
-    }    
+    }
 
-    // ---------- internals ----------
-
-    /** Источник: pobb.in / pastebin / сырой PoB-код. */
     private suspend fun resolveRaw(source: String): String {
         val s = source.trim()
         if (!s.startsWith("http://") && !s.startsWith("https://")) return s
@@ -110,19 +110,18 @@ class PobService(private val vertx: Vertx, private val pool: PgPool, private val
     private fun sha256(input: String): String =
         MessageDigest.getInstance("SHA-256").digest(input.toByteArray()).joinToString("") { "%02x".format(it) }
 
-    /** PoB-код = base64(zlib(XML)). Алфавит может быть standard или URL-safe. */
-    private fun parse(raw: String): PobNormalized {
+    /** PoB-код = base64(zlib(XML)). */
+    private suspend fun parse(raw: String): PobNormalized {
         val std = raw.trim().replace('-', '+').replace('_', '/')
         val compressed = Base64.getMimeDecoder().decode(std)
         val xml = inflate(compressed)
 
         val dbf = DocumentBuilderFactory.newInstance()
-        dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true) // XXE-защита
+        dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
         val doc = dbf.newDocumentBuilder().parse(InputSource(StringReader(xml)))
         val root = doc.documentElement
 
         val build = children(root).firstOrNull { it.tagName == "Build" }
-        // ---------- PlayerStat (DPS/ES/резисты) ----------
         val stats = mutableMapOf<String, Double>()
         val statElems = root.getElementsByTagName("PlayerStat")
         for (i in 0 until statElems.length) {
@@ -131,7 +130,6 @@ class PobService(private val vertx: Vertx, private val pool: PgPool, private val
             stats[e.getAttribute("stat")] = v
         }
 
-        // ---------- Камни: <Gem> внутри <Skill slot=...> ----------
         val gems = mutableListOf<GemDto>()
         val gemElems = root.getElementsByTagName("Gem")
         for (i in 0 until gemElems.length) {
@@ -143,38 +141,37 @@ class PobService(private val vertx: Vertx, private val pool: PgPool, private val
                 level = e.getAttribute("level").toIntOrNull() ?: 1,
                 quality = e.getAttribute("quality").toIntOrNull() ?: 0,
                 enabled = e.getAttribute("enabled") != "false",
-                slot = parent?.takeIf { it.tagName == "Skill" }
-                    ?.getAttribute("slot")?.ifBlank { null }
+                slot = parent?.takeIf { it.tagName == "Skill" }?.getAttribute("slot")?.ifBlank { null }
             )
         }
 
-        // ---------- Пассивки: Spec@nodes (comma-separated) ----------
         val spec = root.getElementsByTagName("Spec").item(0) as? Element
         val treeVersion = spec?.getAttribute("treeVersion")?.ifBlank { null }
         val passiveIds = spec?.getAttribute("nodes")
             ?.split(",")?.mapNotNull { it.trim().toIntOrNull() } ?: emptyList()
 
-        // ---------- Тату / ранеграфты ----------
+        // Тату/ранеграфты: имена + их текстовые моды
         val overrides = mutableListOf<String>()
+        val overrideLines = mutableListOf<String>()
         val ovElems = root.getElementsByTagName("Override")
         for (i in 0 until ovElems.length) {
-            val dn = (ovElems.item(i) as Element).getAttribute("dn")
+            val e = ovElems.item(i) as Element
+            val dn = e.getAttribute("dn")
             if (dn.isNotBlank()) overrides += dn
+            overrideLines += textLines(e)
         }
 
-        // ---------- Предметы: сырой текст внутри <Item> ----------
         val items = mutableListOf<ItemDto>()
         val itemElems = root.getElementsByTagName("Item")
         for (i in 0 until itemElems.length) {
             val e = itemElems.item(i) as Element
             val id = e.getAttribute("id").toIntOrNull() ?: continue
-            val lines = itemTextLines(e)
+            val lines = textLines(e)
             if (lines.size < 3 || !lines[0].startsWith("Rarity:")) continue
             val mods = lines.drop(3).filter { !isMetaLine(it) }
             items += ItemDto(id, lines[0].removePrefix("Rarity:").trim(), lines[1], lines[2], mods)
         }
 
-        // ---------- Экипировка по слотам (активный ItemSet) ----------
         val itemsEl = children(root).firstOrNull { it.tagName == "Items" }
         val activeSet = itemsEl?.getAttribute("activeItemSet") ?: "1"
         val byId = items.associateBy { it.id }
@@ -194,7 +191,6 @@ class PobService(private val vertx: Vertx, private val pool: PgPool, private val
             }
         }
 
-        // ---------- Конфиг: только активный ConfigSet ----------
         val config = mutableMapOf<String, String>()
         val configEl = children(root).firstOrNull { it.tagName == "Config" }
         val activeCfg = configEl?.getAttribute("activeConfigSet") ?: "1"
@@ -213,21 +209,78 @@ class PobService(private val vertx: Vertx, private val pool: PgPool, private val
             }
         }
 
+        val enabledGems = gems.filter { it.enabled }
+        val ascendancy = build?.getAttribute("ascendClassName")?.ifBlank { null }
+
+        // Выбранные mastery-эффекты: пары {nodeId,effectId}
+        val masteryEffectIds = Regex("\\{(\\d+),(\\d+)\\}")
+            .findAll(spec?.getAttribute("masteryEffects") ?: "")
+            .map { it.groupValues[2].toInt() }
+            .toList()
+
+        // Моды дерева: sd взятых нод + mastery-эффекты (кэш data.json)
+        val treeLines = try {
+            tree.statLines(treeVersion ?: "3_29", passiveIds, masteryEffectIds)
+        } catch (e: Exception) {
+            println("[PobService] statLines failed: $e")
+            emptyList()
+        }
+
+        val aura = computeAuraStats(
+            items.flatMap { it.mods } + overrideLines + treeLines,
+            stats, ascendancy,
+            enabledGems.count { it.name in GemTaxonomy.AURAS }
+        )
+
         return PobNormalized(
             level = build?.getAttribute("level")?.toIntOrNull(),
             className = build?.getAttribute("className")?.ifBlank { null },
-            ascendancy = build?.getAttribute("ascendClassName")?.ifBlank { null },
-            gems = gems.filter { it.enabled },
+            ascendancy = ascendancy,
+            gems = enabledGems,
             passiveNodeIds = passiveIds,
             treeVersion = treeVersion,
             overrides = overrides,
             items = items,
             gear = gear,
             config = config,
-            stats = stats
+            stats = stats,
+            aura = aura
         )
     }
-    /** Сервисные строки предмета — не моды. */
+
+    /**
+     * Паспорт аура-бота: суммируем increased% по всем источникам
+     * (дерево + mastery + шмот + графты). Это ровно «Total Increased» из PoB.
+     */
+    private fun computeAuraStats(
+        lines: List<String>, stats: Map<String, Double>, ascendancy: String?, auraCount: Int
+    ): AuraStatsDto {
+        var auraEffect = 0
+        var areaEffect = 0
+        var resEff = 0
+        val num = Regex("(-?\\d+)(?:\\.\\d+)?%")
+        for (l in lines) {
+            val v = num.find(l)?.groupValues?.get(1)?.toIntOrNull() ?: continue
+            when {
+                l.contains("increased Aura Effect") -> auraEffect += v
+                l.contains("increased Area of Effect") -> areaEffect += v
+                l.contains("Reservation Efficiency") -> resEff += v
+            }
+        }
+        val fr = stats["FireResist"]?.toInt() ?: 0
+        val cr = stats["ColdResist"]?.toInt() ?: 0
+        val lr = stats["LightningResist"]?.toInt() ?: 0
+        val ch = stats["ChaosResist"]?.toInt() ?: 0
+        return AuraStatsDto(
+            auraBot = ascendancy in GemTaxonomy.AURA_BOT_ASCENDANCIES || auraCount >= 5,
+            auraEffect = auraEffect,
+            areaEffect = areaEffect,
+            reservationEff = resEff,
+            fireResist = fr, coldResist = cr, lightResist = lr, chaosResist = ch,
+            maxResist = maxOf(fr, cr, lr)
+        )
+    }
+
     private val metaPrefixes = listOf(
         "Unique ID:", "Item Level:", "LevelReq:", "Implicits:", "Sockets:", "Quality:",
         "Energy Shield:", "Evasion:", "Armour:", "Intangibility:", "Catalyst",
@@ -236,17 +289,16 @@ class PobService(private val vertx: Vertx, private val pool: PgPool, private val
     )
     private fun isMetaLine(l: String) = metaPrefixes.any { l.startsWith(it) }
 
-    /** Текстовые строки предмета (Rarity / имя / база / моды). */
-    private fun itemTextLines(e: Element): List<String> {
+    private fun textLines(e: Element): List<String> {
         val sb = StringBuilder()
         val nodes = e.childNodes
         for (i in 0 until nodes.length) {
             val n = nodes.item(i)
-            if (n.nodeType == org.w3c.dom.Node.TEXT_NODE || n.nodeType == org.w3c.dom.Node.CDATA_SECTION_NODE)
+            if (n.nodeType == W3cNode.TEXT_NODE || n.nodeType == W3cNode.CDATA_SECTION_NODE)
                 sb.append(n.nodeValue)
         }
         return sb.toString().split('\n').map { it.trim() }.filter { it.isNotBlank() }
-    }    
+    }
 
     private fun inflate(data: ByteArray): String {
         val inflater = Inflater()
@@ -280,7 +332,6 @@ class PobService(private val vertx: Vertx, private val pool: PgPool, private val
             parsed = jsonToNormalized(JsonObject(row.getString("parsed_data")))
         )
 
-    /** Ручной маппинг: не зависим от Jackson-KotlinModule в vertx-кодеке. */
     private fun jsonToNormalized(j: JsonObject): PobNormalized {
         val gearJson = j.getJsonObject("gear") ?: JsonObject()
         val configJson = j.getJsonObject("config") ?: JsonObject()
@@ -316,7 +367,20 @@ class PobService(private val vertx: Vertx, private val pool: PgPool, private val
             } ?: emptyList(),
             gear = gearJson.fieldNames().associateWith { gearJson.getString(it) },
             config = configJson.fieldNames().associateWith { configJson.getString(it) },
-            stats = statsJson.fieldNames().associateWith { statsJson.getDouble(it) ?: 0.0 }
+            stats = statsJson.fieldNames().associateWith { statsJson.getDouble(it) ?: 0.0 },
+            aura = j.getJsonObject("aura")?.let { a ->
+                AuraStatsDto(
+                    a.getBoolean("auraBot") ?: false,
+                    a.getInteger("auraEffect") ?: 0,
+                    a.getInteger("areaEffect") ?: 0,
+                    a.getInteger("reservationEff") ?: 0,
+                    a.getInteger("fireResist") ?: 0,
+                    a.getInteger("coldResist") ?: 0,
+                    a.getInteger("lightResist") ?: 0,
+                    a.getInteger("chaosResist") ?: 0,
+                    a.getInteger("maxResist") ?: 0
+                )
+            }
         )
     }
 }

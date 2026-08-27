@@ -1,5 +1,7 @@
 package com.poenexus.nexus
 
+import com.poenexus.pob.AuraStatsDto
+
 data class CreateNexusRequest(
     val name: String?,
     val description: String?
@@ -43,7 +45,8 @@ data class MemberSynergyDto(
     val email: String,
     val hasBuild: Boolean,
     val auras: List<String>,
-    val curses: List<String>
+    val curses: List<String>,
+    val aura: AuraStatsDto?
 )
 
 data class SynergyDto(

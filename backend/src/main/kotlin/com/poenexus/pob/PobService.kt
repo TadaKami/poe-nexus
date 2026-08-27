@@ -227,12 +227,23 @@ class PobService(private val vertx: Vertx, private val pool: PgPool, private val
         val ascendancy = build?.getAttribute("ascendClassName")?.ifBlank { null }
 
         // Моды дерева: sd взятых нод + mastery-эффекты (кэш data.json)
+        // val treeLines = try {
+        //     tree.statLines(treeVersion ?: "3_29", passiveIds, masteryEffectIds)
+        // } catch (e: Exception) {
+        //     println("[PobService] statLines failed: $e")
+        //     emptyList()
+        // }
         val treeLines = try {
             tree.statLines(treeVersion ?: "3_29", passiveIds, masteryEffectIds)
         } catch (e: Exception) {
             println("[PobService] statLines failed: $e")
             emptyList()
         }
+
+        println("[PobService] treeLines count: ${treeLines.size}")
+        println("[PobService] overrideLines count: ${overrideLines.size}")
+        println("[PobService] item mods count: ${items.flatMap { it.mods }.size}")
+        println("[PobService] Total lines for aura calc: ${items.flatMap { it.mods }.size + overrideLines.size + treeLines.size}")        
 
         val aura = computeAuraStats(
             items.flatMap { it.mods } + overrideLines + treeLines,
@@ -260,49 +271,79 @@ class PobService(private val vertx: Vertx, private val pool: PgPool, private val
      * Паспорт аура-бота: суммируем increased% по всем источникам
      * (дерево + mastery + шмот + графты + саппорты).
      */
-    private fun computeAuraStats(
-        lines: List<String>, gems: List<GemDto>,
-        stats: Map<String, Double>, ascendancy: String?, auraCount: Int
-    ): AuraStatsDto {
-        var auraEffect = 0
-        var areaEffect = 0
-        var resEff = 0
-        // Актуальные вординги 3.25+: дерево пишет "effect of Non-Curse Auras",
-        // предметы — "effect of your Auras", старые уники — "Aura Effect".
-        val auraRx = listOf(
-            "increased effect of Non-Curse Auras",
-            "increased effect of your Auras",
-            "increased Aura Effect"
-        )
-        val num = Regex("(-?\\d+)(?:\\.\\d+)?%")
-        for (l in lines) {
-            val v = num.find(l)?.groupValues?.get(1)?.toIntOrNull() ?: continue
-            when {
-                auraRx.any { l.contains(it, ignoreCase = true) } -> auraEffect += v
-                l.contains("increased Area of Effect", ignoreCase = true) -> areaEffect += v
-                l.contains("Reservation Efficiency", ignoreCase = true) -> resEff += v
+private fun computeAuraStats(
+    lines: List<String>, gems: List<GemDto>,
+    stats: Map<String, Double>, ascendancy: String?, auraCount: Int
+): AuraStatsDto {
+    var auraEffect = 0
+    var areaEffect = 0
+    var resEff = 0
+    
+    println("[AuraStats] === Processing ${lines.size} lines ===")
+    
+    val auraRx = listOf(
+        "increased effect of Non-Curse Auras",
+        "increased effect of your Auras",
+        "increased Skill Aura Effect",
+        "increased Aura Effect"
+    )
+    val num = Regex("(-?\\d+)(?:\\.\\d+)?%")
+    val matched = mutableListOf<String>()
+    
+    for (l in lines) {
+        val v = num.find(l)?.groupValues?.get(1)?.toIntOrNull() ?: continue
+        when {
+            l.contains("on your Minions", ignoreCase = true) -> {
+                println("[AuraStats] SKIP (minions): $l")
             }
+            auraRx.any { l.contains(it, ignoreCase = true) } -> { 
+                auraEffect += v
+                matched += l
+            }
+            l.contains("increased Area of Effect", ignoreCase = true) -> areaEffect += v
+            l.contains("Reservation Efficiency", ignoreCase = true) -> resEff += v
         }
-        // Саппорты, дающие increased Aura Effect.
-        // ВРЕМЕННО: кураторская таблица по уровням гема, пока нет полной базы статов гемов.
-        for (g in gems) {
-            val table = GEM_AURA_EFFECT[g.name] ?: continue
-            val lv = table.keys.filter { it <= g.level }.maxOrNull() ?: continue
-            auraEffect += table[lv]!!
-        }
-        val fr = stats["FireResist"]?.toInt() ?: 0
-        val cr = stats["ColdResist"]?.toInt() ?: 0
-        val lr = stats["LightningResist"]?.toInt() ?: 0
-        val ch = stats["ChaosResist"]?.toInt() ?: 0
-        return AuraStatsDto(
-            auraBot = ascendancy in GemTaxonomy.AURA_BOT_ASCENDANCIES || auraCount >= 5,
-            auraEffect = auraEffect,
-            areaEffect = areaEffect,
-            reservationEff = resEff,
-            fireResist = fr, coldResist = cr, lightResist = lr, chaosResist = ch,
-            maxResist = maxOf(fr, cr, lr)
-        )
     }
+    
+    // Generosity бонус из ГЕМА
+    var gemBonus = 0
+    for (g in gems) {
+        val table = GEM_AURA_EFFECT[g.name] ?: continue
+        val lv = table.keys.filter { it <= g.level }.maxOrNull() ?: continue
+        gemBonus += table[lv]!!
+        println("[AuraStats] Found Generosity gem at level ${g.level}, bonus: ${table[lv]}")
+    }
+    
+    // Generosity из модов предметов: "Socketed Gems are Supported by Level X Generosity"
+    val grantedGen = Regex("Supported by Level (\\d+) Generosity")
+    for (l in lines) {
+        val m = grantedGen.find(l) ?: continue
+        val lv = m.groupValues[1].toInt()
+        val table = GEM_AURA_EFFECT["Generosity"]!!
+        val bonus = table.keys.filter { it <= lv }.maxOrNull()?.let { table[it]!! } ?: 0
+        gemBonus += bonus
+        println("[AuraStats] Found granted Generosity level $lv from item mod, bonus: $bonus")
+    }
+    
+    auraEffect += gemBonus
+    
+    println("[AuraStats] RESULT: total=$auraEffect (base=${auraEffect-gemBonus} + gemBonus=$gemBonus) area=$areaEffect resEff=$resEff")
+    println("[AuraStats] matched: $matched")
+
+    val fr = stats["FireResist"]?.toInt() ?: 0
+    val cr = stats["ColdResist"]?.toInt() ?: 0
+    val lr = stats["LightningResist"]?.toInt() ?: 0
+    val ch = stats["ChaosResist"]?.toInt() ?: 0
+    
+    return AuraStatsDto(
+        auraBot = ascendancy in GemTaxonomy.AURA_BOT_ASCENDANCIES || auraCount >= 5,
+        auraEffect = auraEffect,
+        areaEffect = areaEffect,
+        reservationEff = resEff,
+        fireResist = fr, coldResist = cr, lightResist = lr, chaosResist = ch,
+        maxResist = maxOf(fr, cr, lr)
+    )
+}
 
     private val GEM_AURA_EFFECT: Map<String, Map<Int, Int>> = mapOf(
         // Generosity Support: ~+5% Aura Effect за уровень гема выше 20-го (аппроксимация)

@@ -104,29 +104,56 @@ class TreeDataService(private val vertx: Vertx) {
         return TreePayload(nodes, edges)
     }
 
-    private suspend fun load(version: String): RawTree = withContext(Dispatchers.IO) {
-        val sources = listOf(
-            "https://raw.githubusercontent.com/grindinggear/skilltree-export/master/data.json"
-        )
-        for (url in sources) {
-            try {
-                val resp = client.getAbs(url).putHeader("User-Agent", "PoENexus-dev").send().await()
-                println("[TreeData] $url -> ${resp.statusCode()}")
-                if (resp.statusCode() != 200) continue
-                val root = JsonObject(resp.bodyAsString())
-                val nodes = normalize(root)
-                val me = mutableMapOf<String, JsonObject>()
-                root.getJsonObject("masteryEffects")?.let { m ->
-                    for (k in m.fieldNames()) m.getJsonObject(k)?.let { me[k] = it }
+private suspend fun load(version: String): RawTree = withContext(Dispatchers.IO) {
+    val sources = listOf(
+        "https://raw.githubusercontent.com/grindinggear/skilltree-export/master/data.json"
+    )
+    for (url in sources) {
+        try {
+            val resp = client.getAbs(url).putHeader("User-Agent", "PoENexus-dev").send().await()
+            println("[TreeData] $url -> ${resp.statusCode()}")
+            if (resp.statusCode() != 200) continue
+            val root = JsonObject(resp.bodyAsString())
+            println("[TreeData] root keys: ${root.fieldNames()}")
+            
+            val nodes = normalize(root)
+            val me = mutableMapOf<String, JsonObject>()
+            
+            // Вариант 1: отдельный объект masteryEffects
+            root.getJsonObject("masteryEffects")?.let { m ->
+                println("[TreeData] found masteryEffects object with ${m.fieldNames().size} entries")
+                for (k in m.fieldNames()) m.getJsonObject(k)?.let { me[k] = it }
+            } ?: run {
+                println("[TreeData] masteryEffects object NOT FOUND, searching in nodes...")
+                // Вариант 2: mastery effects внутри нод (поле "mastery" или "reminderText")
+                var masteryCount = 0
+                for ((key, node) in nodes) {
+                    // Ищем ноды с mastery=true и извлекаем их эффекты
+                    if (node.getBoolean("mastery") == true) {
+                        masteryCount++
+                        // Mastery effect может быть в самом node с полем "sd"
+                        val sd = node.getJsonArray("sd")
+                        if (sd != null && sd.size() > 0) {
+                            me[key] = node // сохраняем саму ноду как mastery effect
+                        }
+                    }
+                    // Также проверяем поле "masteryEffect" (альтернативный формат)
+                    node.getJsonObject("masteryEffect")?.let { masteryNode ->
+                        masteryCount++
+                        me[key] = masteryNode
+                    }
                 }
-                println("[TreeData] normalize: ${nodes.size} nodes, ${me.size} masteryEffects")
-                if (nodes.isNotEmpty()) return@withContext RawTree(nodes, me)
-            } catch (e: Exception) {
-                println("[TreeData] ошибка для $url: $e")
+                println("[TreeData] found $masteryCount mastery nodes in tree data")
             }
+            
+            println("[TreeData] normalize: ${nodes.size} nodes, ${me.size} masteryEffects")
+            if (nodes.isNotEmpty()) return@withContext RawTree(nodes, me)
+        } catch (e: Exception) {
+            println("[TreeData] ошибка для $url: $e")
         }
-        RawTree(emptyMap(), emptyMap())
     }
+    RawTree(emptyMap(), emptyMap())
+}
 
     /** Сливаем nodes (детали) и groups (координаты, раскладка по орбитам). */
     private fun normalize(root: JsonObject): Map<String, JsonObject> {

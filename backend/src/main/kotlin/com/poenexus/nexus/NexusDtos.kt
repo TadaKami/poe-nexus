@@ -44,9 +44,12 @@ data class MemberSynergyDto(
     val userId: String,
     val email: String,
     val hasBuild: Boolean,
-    val auras: List<String>,
-    val curses: List<String>,
-    val aura: AuraStatsDto?
+    val auras: List<AuraGemDto>,
+    val curses: List<AuraGemDto>,
+    val aura: AuraStatsDto?,
+    val life: Int,
+    val energyShield: Int,
+    val mana: Int
 )
 
 data class SynergyDto(
@@ -55,3 +58,9 @@ data class SynergyDto(
     val curseCounts: Map<String, Int>,
     val duplicates: List<String>
 )
+
+/** Аура/проклятие с тотал-уровнем (база + бонусы предметов слота). */
+data class AuraGemDto(
+    val name: String,
+    val level: Int
+ )

@@ -27,9 +27,12 @@ export interface MemberSynergyDto {
   userId: string
   email: string
   hasBuild: boolean
-  auras: string[]
-  curses: string[]
-  aura: AuraStatsDto | null
+  auras: AuraGemDto[]
+  curses: AuraGemDto[]
+   aura: AuraStatsDto | null
+  life: number
+  energyShield: number
+  mana: number
 }
 
 export interface SynergyDto {
@@ -49,4 +52,9 @@ export interface AuraStatsDto {
   lightResist: number
   chaosResist: number
   maxResist: number
+}
+
+export interface AuraGemDto{
+  name: string,
+  level: number
 }

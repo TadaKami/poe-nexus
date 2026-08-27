@@ -105,6 +105,11 @@ export default function NexusPage() {
                           · макс <b className="text-amber-100">{m.aura.maxResist}%</b>
                         </p>
                         <p className="text-amber-100/80">
+                          <span className="text-red-300">HP {m.life}</span> ·{' '}
+                          <span className="text-sky-300">ES {m.energyShield}</span> ·{' '}
+                          <span className="text-blue-300">Mana {m.mana}</span>
+                        </p>                        
+                        <p className="text-amber-100/80">
                           Aura Effect <b className="text-poe-gold">+{m.aura.auraEffect}%</b> ·
                           Area Effect +{m.aura.areaEffect}% ·
                           ResEff +{m.aura.reservationEff}%
@@ -113,10 +118,14 @@ export default function NexusPage() {
                     )}                    
                     <div className="mt-2 flex flex-wrap gap-1">
                       {m.auras.map((a) => (
-                        <span key={a} className="rounded bg-poe-gold/20 px-1.5 py-0.5 text-xs text-poe-gold">{a}</span>
+                        <span key={a.name} className="rounded bg-poe-gold/20 px-1.5 py-0.5 text-xs text-poe-gold">
+                          {a.name} <b>{a.level}</b>
+                        </span>
                       ))}
                       {m.curses.map((c) => (
-                        <span key={c} className="rounded bg-purple-400/20 px-1.5 py-0.5 text-xs text-purple-300">{c}</span>
+                        <span key={c.name} className="rounded bg-purple-400/20 px-1.5 py-0.5 text-xs text-purple-300">
+                          {c.name} <b>{c.level}</b>
+                        </span>
                       ))}
                     </div>
                   </div>

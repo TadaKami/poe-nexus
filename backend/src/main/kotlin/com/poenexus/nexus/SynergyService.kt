@@ -9,8 +9,8 @@ import io.vertx.sqlclient.Tuple
 import java.util.UUID
 
 /**
- * Модуль 2: что каждый участник несёт в пати (ауры/проклятия/аура-паспорт)
- * из его сохранённого current-PoB.
+ * Модуль 2: что каждый участник несёт в пати:
+ * ауры/проклятия с тотал-уровнем, аура-паспорт, HP/ES/Mana (важно для Mana Guard).
  */
 class SynergyService(private val pool: PgPool) {
 
@@ -28,19 +28,32 @@ class SynergyService(private val pool: PgPool) {
         val curseCounts = mutableMapOf<String, Int>()
 
         for (r in rows) {
-            val auras = mutableListOf<String>()
-            val curses = mutableListOf<String>()
-            // pg-client в нашем сетапе отдаёт jsonb как String
             val parsed = r.getString("parsed_data")?.let { runCatching { JsonObject(it) }.getOrNull() }
+            val items = parsed?.getJsonArray("items")?.map { it as JsonObject } ?: emptyList()
+            val gearJson = parsed?.getJsonObject("gear") ?: JsonObject()
+            val gear = gearJson.fieldNames().associateWith { gearJson.getString(it) }
+
+            val auras = mutableListOf<AuraGemDto>()
+            val curses = mutableListOf<AuraGemDto>()
             parsed?.getJsonArray("gems")?.let { gems ->
                 for (i in 0 until gems.size()) {
-                    val name = gems.getJsonObject(i)?.getString("name") ?: continue
+                    val g = gems.getJsonObject(i) ?: continue
+                    val name = g.getString("name") ?: continue
+                    val total = gemTotalLevel(g, items, gear)
                     when (name) {
-                        in GemTaxonomy.AURAS -> { auras += name; auraCounts[name] = (auraCounts[name] ?: 0) + 1 }
-                        in GemTaxonomy.CURSES -> { curses += name; curseCounts[name] = (curseCounts[name] ?: 0) + 1 }
+                        in GemTaxonomy.AURAS -> {
+                            auras += AuraGemDto(name, total)
+                            auraCounts[name] = (auraCounts[name] ?: 0) + 1
+                        }
+                        in GemTaxonomy.CURSES -> {
+                            curses += AuraGemDto(name, total)
+                            curseCounts[name] = (curseCounts[name] ?: 0) + 1
+                        }
                     }
                 }
             }
+
+            val stats = parsed?.getJsonObject("stats") ?: JsonObject()
             val aura = parsed?.getJsonObject("aura")?.let { a ->
                 AuraStatsDto(
                     a.getBoolean("auraBot") ?: false,
@@ -60,7 +73,10 @@ class SynergyService(private val pool: PgPool) {
                 parsed != null,
                 auras,
                 curses,
-                aura
+                aura,
+                life = stats.getDouble("Life")?.toInt() ?: 0,
+                energyShield = stats.getDouble("EnergyShield")?.toInt() ?: 0,
+                mana = stats.getDouble("Mana")?.toInt() ?: 0
             )
         }
 
@@ -68,4 +84,33 @@ class SynergyService(private val pool: PgPool) {
             curseCounts.filterValues { it > 1 }.keys
         return SynergyDto(members, auraCounts, curseCounts, duplicates.toList())
     }
+
+    /**
+     * Тотал-уровень гема: база из XML + бонусы "+N to Level of Socketed ..."
+     * из предмета того слота, где стоит гем.
+     */
+    private fun gemTotalLevel(gem: JsonObject, items: List<JsonObject>, gear: Map<String, String>): Int {
+        val base = gem.getInteger("level") ?: 1
+        val slot = gem.getString("slot") ?: return base
+        val itemName = gear[slot] ?: return base
+        val item = items.firstOrNull { it.getString("name") == itemName } ?: return base
+        val name = gem.getString("name") ?: ""
+        val isAura = name in GemTaxonomy.AURAS
+        val isCurse = name in GemTaxonomy.CURSES
+        val mods = item.getJsonArray("mods")?.map { it.toString() } ?: emptyList()
+        var bonus = 0
+        for (m in mods) {
+            bonus += when {
+                m.contains("to Level of Socketed Gems") -> plusNum(m)
+                isAura && m.contains("to Level of Socketed Aura Gems") -> plusNum(m)
+                isCurse && m.contains("to Level of Socketed Curse Gems") -> plusNum(m)
+                (isAura || isCurse) && m.contains("to Level of Socketed Spell Gems") -> plusNum(m)
+                else -> 0
+            }
+        }
+        return base + bonus
+    }
+
+    private fun plusNum(m: String): Int =
+        Regex("\\+(\\d+)").find(m)?.groupValues?.get(1)?.toInt() ?: 0
 }

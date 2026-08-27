@@ -84,6 +84,7 @@ class PobService(private val vertx: Vertx, private val pool: PgPool, private val
         }
     }
 
+    /** Источник: pobb.in / pastebin / сырой PoB-код. */
     private suspend fun resolveRaw(source: String): String {
         val s = source.trim()
         if (!s.startsWith("http://") && !s.startsWith("https://")) return s
@@ -110,18 +111,20 @@ class PobService(private val vertx: Vertx, private val pool: PgPool, private val
     private fun sha256(input: String): String =
         MessageDigest.getInstance("SHA-256").digest(input.toByteArray()).joinToString("") { "%02x".format(it) }
 
-    /** PoB-код = base64(zlib(XML)). */
+    /** PoB-код = base64(zlib(XML)). Алфавит может быть standard или URL-safe. */
     private suspend fun parse(raw: String): PobNormalized {
         val std = raw.trim().replace('-', '+').replace('_', '/')
         val compressed = Base64.getMimeDecoder().decode(std)
         val xml = inflate(compressed)
 
         val dbf = DocumentBuilderFactory.newInstance()
-        dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
+        dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true) // XXE-защита
         val doc = dbf.newDocumentBuilder().parse(InputSource(StringReader(xml)))
         val root = doc.documentElement
 
         val build = children(root).firstOrNull { it.tagName == "Build" }
+
+        // ---------- PlayerStat (DPS/ES/резисты) ----------
         val stats = mutableMapOf<String, Double>()
         val statElems = root.getElementsByTagName("PlayerStat")
         for (i in 0 until statElems.length) {
@@ -130,6 +133,7 @@ class PobService(private val vertx: Vertx, private val pool: PgPool, private val
             stats[e.getAttribute("stat")] = v
         }
 
+        // ---------- Камни: <Gem> внутри <Skill slot=...> ----------
         val gems = mutableListOf<GemDto>()
         val gemElems = root.getElementsByTagName("Gem")
         for (i in 0 until gemElems.length) {
@@ -145,12 +149,19 @@ class PobService(private val vertx: Vertx, private val pool: PgPool, private val
             )
         }
 
+        // ---------- Пассивки: Spec@nodes (comma-separated) ----------
         val spec = root.getElementsByTagName("Spec").item(0) as? Element
         val treeVersion = spec?.getAttribute("treeVersion")?.ifBlank { null }
         val passiveIds = spec?.getAttribute("nodes")
             ?.split(",")?.mapNotNull { it.trim().toIntOrNull() } ?: emptyList()
 
-        // Тату/ранеграфты: имена + их текстовые моды
+        // Выбранные mastery-эффекты: пары {nodeId,effectId}
+        val masteryEffectIds = Regex("\\{(\\d+),(\\d+)\\}")
+            .findAll(spec?.getAttribute("masteryEffects") ?: "")
+            .map { it.groupValues[2].toInt() }
+            .toList()
+
+        // ---------- Тату / ранеграфты: имена + их текстовые моды ----------
         val overrides = mutableListOf<String>()
         val overrideLines = mutableListOf<String>()
         val ovElems = root.getElementsByTagName("Override")
@@ -161,6 +172,7 @@ class PobService(private val vertx: Vertx, private val pool: PgPool, private val
             overrideLines += textLines(e)
         }
 
+        // ---------- Предметы: сырой текст внутри <Item> ----------
         val items = mutableListOf<ItemDto>()
         val itemElems = root.getElementsByTagName("Item")
         for (i in 0 until itemElems.length) {
@@ -172,6 +184,7 @@ class PobService(private val vertx: Vertx, private val pool: PgPool, private val
             items += ItemDto(id, lines[0].removePrefix("Rarity:").trim(), lines[1], lines[2], mods)
         }
 
+        // ---------- Экипировка по слотам (активный ItemSet) ----------
         val itemsEl = children(root).firstOrNull { it.tagName == "Items" }
         val activeSet = itemsEl?.getAttribute("activeItemSet") ?: "1"
         val byId = items.associateBy { it.id }
@@ -191,6 +204,7 @@ class PobService(private val vertx: Vertx, private val pool: PgPool, private val
             }
         }
 
+        // ---------- Конфиг: только активный ConfigSet ----------
         val config = mutableMapOf<String, String>()
         val configEl = children(root).firstOrNull { it.tagName == "Config" }
         val activeCfg = configEl?.getAttribute("activeConfigSet") ?: "1"
@@ -212,12 +226,6 @@ class PobService(private val vertx: Vertx, private val pool: PgPool, private val
         val enabledGems = gems.filter { it.enabled }
         val ascendancy = build?.getAttribute("ascendClassName")?.ifBlank { null }
 
-        // Выбранные mastery-эффекты: пары {nodeId,effectId}
-        val masteryEffectIds = Regex("\\{(\\d+),(\\d+)\\}")
-            .findAll(spec?.getAttribute("masteryEffects") ?: "")
-            .map { it.groupValues[2].toInt() }
-            .toList()
-
         // Моды дерева: sd взятых нод + mastery-эффекты (кэш data.json)
         val treeLines = try {
             tree.statLines(treeVersion ?: "3_29", passiveIds, masteryEffectIds)
@@ -228,7 +236,7 @@ class PobService(private val vertx: Vertx, private val pool: PgPool, private val
 
         val aura = computeAuraStats(
             items.flatMap { it.mods } + overrideLines + treeLines,
-            stats, ascendancy,
+            enabledGems, stats, ascendancy,
             enabledGems.count { it.name in GemTaxonomy.AURAS }
         )
 
@@ -250,22 +258,37 @@ class PobService(private val vertx: Vertx, private val pool: PgPool, private val
 
     /**
      * Паспорт аура-бота: суммируем increased% по всем источникам
-     * (дерево + mastery + шмот + графты). Это ровно «Total Increased» из PoB.
+     * (дерево + mastery + шмот + графты + саппорты).
      */
     private fun computeAuraStats(
-        lines: List<String>, stats: Map<String, Double>, ascendancy: String?, auraCount: Int
+        lines: List<String>, gems: List<GemDto>,
+        stats: Map<String, Double>, ascendancy: String?, auraCount: Int
     ): AuraStatsDto {
         var auraEffect = 0
         var areaEffect = 0
         var resEff = 0
+        // Актуальные вординги 3.25+: дерево пишет "effect of Non-Curse Auras",
+        // предметы — "effect of your Auras", старые уники — "Aura Effect".
+        val auraRx = listOf(
+            "increased effect of Non-Curse Auras",
+            "increased effect of your Auras",
+            "increased Aura Effect"
+        )
         val num = Regex("(-?\\d+)(?:\\.\\d+)?%")
         for (l in lines) {
             val v = num.find(l)?.groupValues?.get(1)?.toIntOrNull() ?: continue
             when {
-                l.contains("increased Aura Effect") -> auraEffect += v
-                l.contains("increased Area of Effect") -> areaEffect += v
-                l.contains("Reservation Efficiency") -> resEff += v
+                auraRx.any { l.contains(it, ignoreCase = true) } -> auraEffect += v
+                l.contains("increased Area of Effect", ignoreCase = true) -> areaEffect += v
+                l.contains("Reservation Efficiency", ignoreCase = true) -> resEff += v
             }
+        }
+        // Саппорты, дающие increased Aura Effect.
+        // ВРЕМЕННО: кураторская таблица по уровням гема, пока нет полной базы статов гемов.
+        for (g in gems) {
+            val table = GEM_AURA_EFFECT[g.name] ?: continue
+            val lv = table.keys.filter { it <= g.level }.maxOrNull() ?: continue
+            auraEffect += table[lv]!!
         }
         val fr = stats["FireResist"]?.toInt() ?: 0
         val cr = stats["ColdResist"]?.toInt() ?: 0
@@ -281,6 +304,12 @@ class PobService(private val vertx: Vertx, private val pool: PgPool, private val
         )
     }
 
+    private val GEM_AURA_EFFECT: Map<String, Map<Int, Int>> = mapOf(
+        // Generosity Support: ~+5% Aura Effect за уровень гема выше 20-го (аппроксимация)
+        "Generosity" to mapOf(18 to 34, 19 to 39, 20 to 44, 21 to 49, 22 to 54, 23 to 59, 24 to 64)
+    )
+
+    /** Сервисные строки предмета — не моды. */
     private val metaPrefixes = listOf(
         "Unique ID:", "Item Level:", "LevelReq:", "Implicits:", "Sockets:", "Quality:",
         "Energy Shield:", "Evasion:", "Armour:", "Intangibility:", "Catalyst",
@@ -289,6 +318,7 @@ class PobService(private val vertx: Vertx, private val pool: PgPool, private val
     )
     private fun isMetaLine(l: String) = metaPrefixes.any { l.startsWith(it) }
 
+    /** Текстовые строки предмета (Rarity / имя / база / моды). */
     private fun textLines(e: Element): List<String> {
         val sb = StringBuilder()
         val nodes = e.childNodes
@@ -332,6 +362,7 @@ class PobService(private val vertx: Vertx, private val pool: PgPool, private val
             parsed = jsonToNormalized(JsonObject(row.getString("parsed_data")))
         )
 
+    /** Ручной маппинг: не зависим от Jackson-KotlinModule в vertx-кодеке. */
     private fun jsonToNormalized(j: JsonObject): PobNormalized {
         val gearJson = j.getJsonObject("gear") ?: JsonObject()
         val configJson = j.getJsonObject("config") ?: JsonObject()
@@ -370,15 +401,15 @@ class PobService(private val vertx: Vertx, private val pool: PgPool, private val
             stats = statsJson.fieldNames().associateWith { statsJson.getDouble(it) ?: 0.0 },
             aura = j.getJsonObject("aura")?.let { a ->
                 AuraStatsDto(
-                    a.getBoolean("auraBot") ?: false,
-                    a.getInteger("auraEffect") ?: 0,
-                    a.getInteger("areaEffect") ?: 0,
-                    a.getInteger("reservationEff") ?: 0,
-                    a.getInteger("fireResist") ?: 0,
-                    a.getInteger("coldResist") ?: 0,
-                    a.getInteger("lightResist") ?: 0,
-                    a.getInteger("chaosResist") ?: 0,
-                    a.getInteger("maxResist") ?: 0
+                    auraBot = a.getBoolean("auraBot") ?: false,
+                    auraEffect = a.getInteger("auraEffect") ?: 0,
+                    areaEffect = a.getInteger("areaEffect") ?: 0,
+                    reservationEff = a.getInteger("reservationEff") ?: 0,
+                    fireResist = a.getInteger("fireResist") ?: 0,
+                    coldResist = a.getInteger("coldResist") ?: 0,
+                    lightResist = a.getInteger("lightResist") ?: 0,
+                    chaosResist = a.getInteger("chaosResist") ?: 0,
+                    maxResist = a.getInteger("maxResist") ?: 0
                 )
             }
         )

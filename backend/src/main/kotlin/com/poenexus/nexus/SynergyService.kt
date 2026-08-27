@@ -4,6 +4,7 @@ import io.vertx.kotlin.coroutines.await
 import io.vertx.pgclient.PgPool
 import io.vertx.sqlclient.Tuple
 import java.util.UUID
+import io.vertx.core.json.JsonObject
 
 /**
  * Модуль 2: что каждый участник несёт в пати (ауры/проклятия)
@@ -41,7 +42,7 @@ class SynergyService(private val pool: PgPool) {
         for (r in rows) {
             val auras = mutableListOf<String>()
             val curses = mutableListOf<String>()
-            val parsed = r.getJsonObject("parsed_data")
+            val parsed = r.getString("parsed_data")?.let { JsonObject(it) }
             parsed?.getJsonArray("gems")?.let { gems ->
                 for (i in 0 until gems.size()) {
                     val name = gems.getJsonObject(i)?.getString("name") ?: continue

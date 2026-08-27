@@ -47,6 +47,7 @@ class PobService(private val vertx: Vertx, private val pool: PgPool, private val
             Tuple.of(UUID.fromString(userId), scope, url, hash, JsonObject.mapFrom(normalized).encode())
         ).await().first()
         Events.user(vertx, userId, "pob.updated", JsonObject().put("scope", scope))
+        notifyNexuses(userId)
         return rowToDto(row)
     }
 
@@ -67,6 +68,18 @@ class PobService(private val vertx: Vertx, private val pool: PgPool, private val
     }
 
     suspend fun treePayload(version: String): TreePayload = tree.payload(version)
+    /** Билд изменился → пересчитываем синергию у всех со-нексусников. */
+    private suspend fun notifyNexuses(userId: String) {
+        val nexusIds = pool.preparedQuery("SELECT nexus_id FROM nexus_members WHERE user_id = $1")
+            .execute(Tuple.of(UUID.fromString(userId))).await()
+            .map { it.getValue("nexus_id").toString() }
+        for (nid in nexusIds) {
+            val memberIds = pool.preparedQuery("SELECT user_id FROM nexus_members WHERE nexus_id = $1")
+                .execute(Tuple.of(UUID.fromString(nid))).await()
+                .map { it.getValue("user_id").toString() }
+            Events.users(vertx, memberIds, "nexus.synergy.changed", JsonObject().put("nexusId", nid))
+        }
+    }    
 
     // ---------- internals ----------
 

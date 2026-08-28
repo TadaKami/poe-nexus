@@ -63,7 +63,8 @@ export interface TreeNodeDto {
   y: number
   kind: 'normal' | 'notable' | 'keystone' | 'mastery'
   icon: string | null
-  name: string | null
+  name: string | null,
+  sd?: string[]
 }
 
 export interface TreePayload {

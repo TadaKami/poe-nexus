@@ -84,7 +84,8 @@ class TreeDataService(private val vertx: Vertx) {
                     iconRaw.startsWith("http") -> iconRaw
                     else -> "https://web.poecdn.com/$iconRaw"
                 },
-                name = n.getString("name")
+                name = n.getString("name"),
+                sd = n.getJsonArray("sd")?.map { it.toString() } ?: emptyList()
             )
             ids += id
         }

@@ -4,6 +4,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { useNexusStore } from '@/stores/nexusStore'
 import { usePobStore } from '@/stores/pobStore'
 import { router } from '@/router'
+import { useAtlasStore } from '@/stores/atlasStore'
 
 interface WsState {
   status: 'off' | 'connecting' | 'on'
@@ -105,7 +106,11 @@ function route(raw: string) {
         const nx = useNexusStore.getState()
         if (nx.current && nx.current.nexus.id === payload.nexusId) nx.fetchSynergy(payload.nexusId).catch(() => {})
         break
-      }        
+      }       
+      case 'atlas.changed': {
+        useAtlasStore.getState().applyRemoteAlloc(payload.nexusId, payload.nodeIds ?? [])
+        break
+      }       
 
       default:
         console.debug('[ws]', msg.type, payload)

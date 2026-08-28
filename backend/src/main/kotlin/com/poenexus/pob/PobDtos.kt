@@ -67,7 +67,8 @@ data class TreeNodeDto(
     val y: Double,
     val kind: String,
     val icon: String?,
-    val name: String?
+    val name: String?,
+    val sd: List<String> = emptyList()
 )
 
 data class TreePayload(

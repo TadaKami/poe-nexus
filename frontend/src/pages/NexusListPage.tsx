@@ -57,6 +57,7 @@ export default function NexusListPage() {
         <div className="flex items-center gap-4 text-sm">
           <span>{user?.email}</span>
           <Link to="/profile" className="border border-poe-gold/40 px-3 py-1 hover:bg-poe-gold/10">Профиль PoB</Link>
+          <Link to="/atlas" className="border border-poe-gold/40 px-3 py-1 hover:bg-poe-gold/10">Атлас</Link>
           <button onClick={onLogout} className="border border-poe-gold/40 px-3 py-1 hover:bg-poe-gold/10">
             Выйти
           </button>

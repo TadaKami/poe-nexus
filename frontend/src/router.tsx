@@ -6,6 +6,7 @@ import RegisterPage from '@/pages/RegisterPage'
 import NexusListPage from './pages/NexusListPage'
 import NexusPage from './pages/NexusPage'
 import ProfilePage from './pages/ProfilePage'
+import AtlasPage from './pages/AtlasPage'
 
 // Guard: защищённые маршруты. Сначала ждём silent-restore сессии.
 function ProtectedRoute() {
@@ -43,7 +44,8 @@ export const router = createBrowserRouter([
       { path: '/', element: <Navigate to="/nexus" replace /> },
       { path: '/nexus', element: <NexusListPage /> },
       { path: '/nexus/:id', element: <NexusPage /> },
-      { path: '/profile', element: <ProfilePage /> }
+      { path: '/profile', element: <ProfilePage /> },
+      { path: '/atlas', element: <AtlasPage /> }
     ]
   }
 ])
